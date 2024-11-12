@@ -1,0 +1,48 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isVerifiedEmail() {
+      return isAuthenticated() && request.auth.token.email_verified == true;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isAuthenticated() 
+        && isOwner(userId)
+        && request.resource.data.keys().hasAll(['email', 'uid', 'createdAt', 'updatedAt', 'emailVerified'])
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.uid == userId;
+      allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['updatedAt', 'emailVerified']);
+      allow delete: if false;
+    }
+
+    // Waitlist collection
+    match /waitinglist/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isAuthenticated()
+        && isOwner(userId)
+        && request.resource.data.keys().hasAll(['email', 'uid', 'verifiedAt', 'status'])
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.uid == userId;
+      allow update, delete: if false;
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
